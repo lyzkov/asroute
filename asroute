@@ -1,0 +1,57 @@
+#!/bin/bash
+
+function main_lookup {
+
+last_asn=""
+prev_as_rtt=0
+AS_LP=0
+IP_LP=0
+rtt_sum=0
+
+dest_ip=$(ping -c 1 $1 | awk 'NR==1 {print $3}')
+echo "ASRoute to $1 $dest_ip"
+
+while read line; do
+	ip=$(echo $line | awk '{print $3}' | cut -d "(" -f2 | cut -d ")" -f1)
+	domain=$(echo $line | awk '{print $2}')
+
+	rtt=$(echo $line | awk '{print $4}')
+
+	# validate ip address
+	if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+		whois=$(whois -h v4.whois.cymru.com $ip | awk 'NR==2')
+		asn="AS$(echo $whois | awk '{print $1}')"
+		asname=$(echo $whois | awk '{print $5}')
+		if [[ "$asn" == "ASNA" ]]; then
+			asn="*"
+			asname="*"
+		fi
+		if [[ "$asn" != "$last_asn" ]]; then
+			AS_LP=$[$AS_LP+1]
+			rtt_diff=$(echo "scale=2; $rtt - $prev_as_rtt" | bc -l)
+			echo -e "$AS_LP | $asn | $asname | $rtt_diff ms"
+
+			prev_as_rtt=$rtt
+			rtt_sum=$(echo "$rtt_sum + $rtt_diff" | bc -l)
+		fi
+		IP_LP=$[$IP_LP+1]
+		echo -e "\t$IP_LP | $domain | ($ip) | $rtt ms"
+		last_asn=$asn
+	fi
+done < <(traceroute -q 1 $1)  
+
+echo "Total AS lookup time: $rtt_sum ms"
+echo "AS path length: $AS_LP"
+echo "IP path length: $IP_LP"
+}
+
+if [ -e $1 ]; then
+	while read str; do
+		main_lookup $str
+		echo -e "\n"
+	done
+else
+	main_lookup $1
+fi
+
+
