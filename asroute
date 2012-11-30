@@ -3,10 +3,12 @@
 function main_lookup {
 
 last_asn=""
-prev_as_rtt=0
+prev_as_last_rtt=0
 AS_LP=0
 IP_LP=0
 rtt_sum=0
+last_rtt=0
+last_as_hop_rtt=0
 
 # create database schema
 if [ ! -f asroute.sqlite ]
@@ -33,7 +35,7 @@ dest_ip=`echo $(ping -c 1 $1 | awk 'NR==1 {print $3}') | sed 's/(//' | sed 's/)/
 hostbadanieid=`sqlite3 asroute.sqlite "INSERT INTO HostBadanie (id_host, data, adres_ip) VALUES ($hostid, datetime('now'), '$dest_ip');
 		      SELECT last_insert_rowid();"`;
 
-echo "ASRoute to $1 $dest_ip"
+echo "ASRoute to $1 ($dest_ip)"
 while read line; do
 	ip=$(echo $line | awk '{print $3}' | cut -d "(" -f2 | cut -d ")" -f1)
 	domain=$(echo $line | awk '{print $2}')
@@ -60,11 +62,16 @@ while read line; do
 			asname="*"
 		fi
 		if [[ "$asn" != "$last_asn" ]]; then
+			
 			AS_LP=$[$AS_LP+1]
-			rtt_diff=$(echo "scale=2; $rtt - $prev_as_rtt" | bc -l)
-			echo -e "$AS_LP | $asn | $asname | $rtt_diff ms"
-
-			prev_as_rtt=$rtt
+			rtt_diff=$(echo "scale=2; $last_rtt - $prev_as_last_rtt" | bc -l)
+			if [[ ! -z "$last_asn" ]]; then
+				echo -e "Total AS RTT: $rtt_diff ms"
+			fi
+			
+			echo -e "$AS_LP | $asn | $asname | $(echo "$rtt-$last_rtt" | bc -l) ms"
+			last_as_hop_rtt=$(echo "$rtt-$last_rtt" | bc -l)
+			prev_as_last_rtt=$last_rtt
 			rtt_sum=$(echo "$rtt_sum + $rtt_diff" | bc -l)
 			
 			# checking if ASN is already in our database
@@ -85,10 +92,12 @@ while read line; do
 		last_asn=$asn
 		
 		sqlite3 asroute.sqlite "INSERT INTO IPBadanie (id_asbadanie, id_ip, data) VALUES ($asbadanieid, $ipid, datetime('now'))"
+	
+		last_rtt=$rtt
 	fi
 done < <(traceroute -q 1 $1)  
 
-echo "Total AS lookup time: $rtt_sum ms"
+echo "Total AS lookup time: $(echo "$rtt_sum+$last_as_hop_rtt" | bc -l) ms"
 echo "AS path length: $AS_LP"
 echo "IP path length: $IP_LP"
 
