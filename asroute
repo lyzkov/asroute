@@ -8,9 +8,32 @@ AS_LP=0
 IP_LP=0
 rtt_sum=0
 
-dest_ip=$(ping -c 1 $1 | awk 'NR==1 {print $3}')
-echo "ASRoute to $1 $dest_ip"
+# create database schema
+if [ ! -f asroute.sqlite ]
+then
+    echo Creating new database..
+    cat /dev/null > asroute.sqlite
+    sqlite3 asroute.sqlite < asroute.sql;
+    echo Database created!
+fi
 
+# checking if hostname is already in our database
+host=`sqlite3 asroute.sqlite "SELECT * FROM Host WHERE domena='$1'"`;
+
+if [ -z "$host" ] # null string has zero length
+then
+    sqlite3 asroute.sqlite "INSERT INTO Host (domena) VALUES ('$1')";
+fi
+
+hostid=`sqlite3 asroute.sqlite "SELECT id FROM Host WHERE domena='$1'"`;
+
+dest_ip=`echo $(ping -c 1 $1 | awk 'NR==1 {print $3}') | sed 's/(//' | sed 's/)//'`
+# filling HostBadanie table
+# last_insert_rowid returns correct values only for current connection
+hostbadanieid=`sqlite3 asroute.sqlite "INSERT INTO HostBadanie (id_host, data, adres_ip) VALUES ($hostid, datetime('now'), '$dest_ip');
+		      SELECT last_insert_rowid();"`;
+
+echo "ASRoute to $1 $dest_ip"
 while read line; do
 	ip=$(echo $line | awk '{print $3}' | cut -d "(" -f2 | cut -d ")" -f1)
 	domain=$(echo $line | awk '{print $2}')
@@ -19,6 +42,16 @@ while read line; do
 
 	# validate ip address
 	if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+		# checking if IP is already in our database
+		adres_ip=`sqlite3 asroute.sqlite "SELECT * FROM IP WHERE adres_ip='$ip'"`;
+
+		if [ -z "$adres_ip" ] # null string has zero length
+		then
+		    sqlite3 asroute.sqlite "INSERT INTO IP (adres_ip) VALUES ('$ip')";
+		fi
+		
+		ipid=`sqlite3 asroute.sqlite "SELECT id FROM IP WHERE adres_ip='$ip'"`;
+		
 		whois=$(whois -h v4.whois.cymru.com $ip | awk 'NR==2')
 		asn="AS$(echo $whois | awk '{print $1}')"
 		asname=$(echo $whois | awk '{print $5}')
@@ -33,16 +66,32 @@ while read line; do
 
 			prev_as_rtt=$rtt
 			rtt_sum=$(echo "$rtt_sum + $rtt_diff" | bc -l)
+			
+			# checking if ASN is already in our database
+			asnumber=`sqlite3 asroute.sqlite "SELECT * FROM 'AS' WHERE asn='$asn'"`;
+
+			if [ -z "$asnumber" ] # null string has zero length
+			then
+			    sqlite3 asroute.sqlite "INSERT INTO 'AS' (asname, asn) VALUES ('$asname', '$asn')";
+			fi
+			
+			asid=`sqlite3 asroute.sqlite "SELECT id FROM 'AS' WHERE asn='$asn'"`;
+			
+			asbadanieid=`sqlite3 asroute.sqlite "INSERT INTO ASBadanie (id_badanie, id_as, data) VALUES ($hostbadanieid, $asid, datetime('now'));
+		      SELECT last_insert_rowid();"`;
 		fi
 		IP_LP=$[$IP_LP+1]
 		echo -e "\t$IP_LP | $domain | ($ip) | $rtt ms"
 		last_asn=$asn
+		
+		sqlite3 asroute.sqlite "INSERT INTO IPBadanie (id_asbadanie, id_ip, data) VALUES ($asbadanieid, $ipid, datetime('now'))"
 	fi
 done < <(traceroute -q 1 $1)  
 
 echo "Total AS lookup time: $rtt_sum ms"
 echo "AS path length: $AS_LP"
 echo "IP path length: $IP_LP"
+
 }
 
 if [ -e $1 ]; then
@@ -53,5 +102,3 @@ if [ -e $1 ]; then
 else
 	main_lookup $1
 fi
-
-
