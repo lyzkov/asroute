@@ -63,17 +63,28 @@ while read line; do
 		fi
 		if [[ "$asn" != "$last_asn" ]]; then
 			
+			# checking if previous ASN is adjacent to current ASN in CIDR database
+			cidr=1
+			if [[ -z "$last_asn" || -z "`curl -s "http://www.muczacza.pl/sasiady.php?as=$asn" | grep "$last_asn"`" ]]; then
+				cidr=0
+			fi
+			[[ -n "$last_asn" && "$last_asn" != "*" ]] && echo -e "Registered in CIDR: $cidr"
+	
+			# print RTT time for last AS	
 			AS_LP=$[$AS_LP+1]
 			rtt_diff=$(echo "scale=2; $last_rtt - $prev_as_last_rtt" | bc -l)
 			if [[ ! -z "$last_asn" ]]; then
 				echo -e "Total AS RTT: $rtt_diff ms"
 			fi
 			
+			# print AS line
 			echo -e "$AS_LP | $asn | $asname | $(echo "$rtt-$last_rtt" | bc -l) ms"
+
+			# update variables
 			last_as_hop_rtt=$(echo "$rtt-$last_rtt" | bc -l)
 			prev_as_last_rtt=$last_rtt
 			rtt_sum=$(echo "$rtt_sum + $rtt_diff" | bc -l)
-			
+		
 			# checking if ASN is already in our database
 			asnumber=`sqlite3 asroute.sqlite "SELECT * FROM 'AS' WHERE asn='$asn'"`;
 
@@ -84,7 +95,7 @@ while read line; do
 			
 			asid=`sqlite3 asroute.sqlite "SELECT id FROM 'AS' WHERE asn='$asn'"`;
 			
-			asbadanieid=`sqlite3 asroute.sqlite "INSERT INTO ASBadanie (id_badanie, id_as, data) VALUES ($hostbadanieid, $asid, datetime('now'));
+			asbadanieid=`sqlite3 asroute.sqlite "INSERT INTO ASBadanie (id_badanie, id_as, data, prev_as_in_cidr) VALUES ($hostbadanieid, $asid, datetime('now'), $cidr);
 		      SELECT last_insert_rowid();"`;
 		fi
 		IP_LP=$[$IP_LP+1]
