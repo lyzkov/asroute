@@ -68,7 +68,7 @@ while read line; do
 			if [[ -z "$last_asn" || -z "`curl -s "http://www.muczacza.pl/sasiady.php?as=$asn" | grep "$last_asn"`" ]]; then
 				cidr=0
 			fi
-			[[ -n "$last_asn" && "$last_asn" != "*" ]] && echo -e "Registered in CIDR: $cidr"
+			[[ -n "$last_asn" && "$last_asn" != "*" ]] && echo -e "Found in CIDR database: $cidr"
 	
 			# print RTT time for last AS	
 			AS_LP=$[$AS_LP+1]
@@ -94,8 +94,12 @@ while read line; do
 			fi
 			
 			asid=`sqlite3 asroute.sqlite "SELECT id FROM 'AS' WHERE asn='$asn'"`;
+			last_asid=`sqlite3 asroute.sqlite "SELECT id FROM 'AS' WHERE asn='$last_asn'"`;
+			if [ -z "$last_asid" ]; then
+				last_asid="null"
+			fi
 			
-			asbadanieid=`sqlite3 asroute.sqlite "INSERT INTO ASBadanie (id_badanie, id_as, data, prev_as_in_cidr) VALUES ($hostbadanieid, $asid, datetime('now'), $cidr);
+			asbadanieid=`sqlite3 asroute.sqlite "INSERT INTO ASBadanie (id_badanie, id_as, id_prev_as, data, prev_as_in_cidr) VALUES ($hostbadanieid, $asid, $last_asid, datetime('now'), $cidr);
 		      SELECT last_insert_rowid();"`;
 		fi
 		IP_LP=$[$IP_LP+1]
