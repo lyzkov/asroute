@@ -1,4 +1,5 @@
 #!/bin/bash
+dot_input=""
 lastoutput="poprzedni output"
 output=""
 
@@ -14,14 +15,19 @@ for asid in $(sqlite3 asroute.sqlite "SELECT id FROM 'AS'"); do
 		    color="[color=\"blue\"]"
 		fi
 
-		if [[ ! -z "$prevasn" ]]
+		pattern="*"
+		if [[ ! -z "$prevasn" && ! ("$prevasn" == "$pattern" || "$asnumber" == "$pattern") ]]
 		then
 			output="$prevasn -> $asnumber $color;"
 			if [[ "$output" != "$lastoutput" ]]
 			then
-				echo -e $output
+				dot_input="$dot_input\n$(echo -e "$output")"
 			fi
 		fi
 		lastoutput=$output
 	done
 done
+dot_input="$(echo -e "$dot_input" | sort | uniq)"
+dot_input="$(echo -e "digraph G {")\n$dot_input\n$(echo -e "}")"
+echo -e "$dot_input" | dot -Tpng:cairo:gd -o graf.png
+echo -e "Graph saved to graf.png"
