@@ -1,0 +1,27 @@
+#!/bin/bash
+lastoutput="poprzedni output"
+output=""
+
+for asid in $(sqlite3 asroute.sqlite "SELECT id FROM 'AS'"); do
+	for ROW in $(sqlite3 asroute.sqlite "SELECT lol.asn as prevasn, rotfl.asn as asnumber, prev_as_in_cidr  FROM ASBadanie asb left join 'AS' lol on (asb.id_prev_as=lol.id) left join 'AS' rotfl on (asb.id_as=rotfl.id) where id_as=$asid;"); do
+		prevasn=`echo $ROW | awk '{split($0,a,"|"); print a[1]}'`
+		asnumber=`echo $ROW | awk '{split($0,a,"|"); print a[2]}'`
+		cidr=`echo $ROW | awk '{split($0,a,"|"); print a[3]}'`
+	      
+		if [[ "$cidr" == 1 ]]; then
+		    color="[color=\"red\"]"
+		else
+		    color="[color=\"blue\"]"
+		fi
+
+		if [[ ! -z "$prevasn" ]]
+		then
+			output="$prevasn -> $asnumber $color;"
+			if [[ "$output" != "$lastoutput" ]]
+			then
+				echo -e $output
+			fi
+		fi
+		lastoutput=$output
+	done
+done
